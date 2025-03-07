@@ -33,6 +33,7 @@ from vllm.model_executor.layers.quantization.kv_cache import BaseKVCacheMethod
 from vllm.model_executor.parameter import (ChannelQuantScaleParameter,
                                            ModelWeightParameter,
                                            PerTensorScaleParameter)
+from vllm.model_executor.utils import set_weight_attrs
 
 from .quantizer import AscendQuantizer
 
@@ -234,3 +235,54 @@ class AscendKVCacheMethod(BaseKVCacheMethod):
                                        scale, seq_lens_tensor_cpu,
                                        block_tables, isPrefill, attn_metadata,
                                        output)
+
+class AscendFusedMoEMethod():
+    """FusedMoE method for Ascend quantization.
+
+    This class calls AscendQuantizer to search a specific quantization
+    implementations supported on ascend hardware for kvcache methods.
+
+    Args:
+        quant_config: The Ascend quantization config.
+    """
+
+    def __init__(self):
+        self.quantizer = AscendQuantizer.get_quantizer(
+            quant_config.quant_description, prefix)
+        self.quant_method = self.quantizer.build_moe_method()
+
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        num_experts: int,
+        hidden_sizes: int,
+        intermediate_size_per_partition: int,
+        params_dtype: torch.dtype,
+        **extra_weight_attrs,
+    ) -> None:
+        weight_param = self.quant_method.get_weight(num_experts, intermediate_size_per_partition, hidden_sizes, params_dtype)
+        for param_key, param_value in weight_param.items():
+            layer.register_parameter(param_key, param_value)
+            set_weight_attrs(param_value, extra_weight_attrs)
+
+        dynamic_quant_param = self.quant_method.get_dynamic_quant_param(num_experts, intermediate_size_per_partition, params_dtype)
+        for param_key, param_value in dynamic_quant_param.items():
+            param = torch.nn.Parameter(param_value, requires_grad=False)
+            layer.register_parameter(param_key, param)
+
+    def apply(self,
+        layer: torch.nn.Module,
+        x: torch.Tensor,
+        use_grouped_topk: bool,
+        top_k: int,
+        router_logits: torch.Tensor,
+        renormalize: bool,
+        topk_group: Optional[int] = None,
+        num_expert_group: Optional[int] = None,
+        custom_routing_function: Optional[Callable] = None,
+        scoring_func: str = "softmax",
+        e_score_correction_bias: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self.quant_method.apply(layer, x, use_grouped_topk, top_k, router_logits,
+                                       renormalize, topk_group, num_expert_group, custom_routing_function,
+                                       scoring_func, e_score_correction_bias)
