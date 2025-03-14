@@ -30,7 +30,8 @@ from vllm.model_executor.layers.quantization import \
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig, QuantizeMethodBase)
 from vllm.model_executor.layers.quantization.kv_cache import BaseKVCacheMethod
-from vllm.model_executor.layers.fused_moe import (FusedMoE, FusedMoEMethodBase)
+from vllm.model_executor.layers.fused_moe import (FusedMoE, FusedMoEMethodBase
+                                                  FusedMoeWeightScaleSupported)
 from vllm.model_executor.parameter import (ChannelQuantScaleParameter,
                                            ModelWeightParameter,
                                            PerTensorScaleParameter)
@@ -269,10 +270,12 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
             layer.register_parameter(param_key, param)
             set_weight_attrs(param, extra_weight_attrs)
 
+        extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value})
         dynamic_quant_param = self.quant_method.get_dynamic_quant_param(num_experts, intermediate_size_per_partition, hidden_size, params_dtype)
         for param_key, param_value in dynamic_quant_param.items():
             param = torch.nn.Parameter(param_value, requires_grad=False)
             layer.register_parameter(param_key, param)
+            set_weight_attrs(param, extra_weight_attrs)
 
     def apply(self,
         layer: torch.nn.Module,
