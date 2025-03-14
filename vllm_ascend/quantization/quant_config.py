@@ -30,7 +30,7 @@ from vllm.model_executor.layers.quantization import \
 from vllm.model_executor.layers.quantization.base_config import (
     QuantizationConfig, QuantizeMethodBase)
 from vllm.model_executor.layers.quantization.kv_cache import BaseKVCacheMethod
-from vllm.model_executor.layers.fused_moe import (FusedMoE, FusedMoEMethodBase
+from vllm.model_executor.layers.fused_moe import (FusedMoE, FusedMoEMethodBase,
                                                   FusedMoeWeightScaleSupported)
 from vllm.model_executor.parameter import (ChannelQuantScaleParameter,
                                            ModelWeightParameter,
