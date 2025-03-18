@@ -66,6 +66,7 @@ class NPUWorker(LocalOrDistributedWorkerBase):
                  is_driver_worker: bool = False):
         # Register ops when worker init.
         from vllm_ascend import ops  # noqa: F401
+        from torch_npu.contrib import transfer_to_npu
 
         WorkerBase.__init__(self, vllm_config=vllm_config)
         # Try to import mindie_turbo to accelerate vLLM inference.
