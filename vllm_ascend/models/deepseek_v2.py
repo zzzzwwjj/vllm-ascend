@@ -44,15 +44,14 @@ from vllm.model_executor.layers.vocab_parallel_embedding import (
 from vllm.model_executor.model_loader.weight_utils import (
     default_weight_loader, maybe_remap_kv_scale_name)
 
-from vllm.model_executor.models.utils import (PPMissingLayer, is_pp_missing_parameter,
-                    make_empty_intermediate_tensors_factory, make_layers,
-                    maybe_prefix)
+from vllm.model_executor.models.utils import (
+    PPMissingLayer, is_pp_missing_parameter,
+    make_empty_intermediate_tensors_factory, make_layers, maybe_prefix)
 from vllm.sequence import IntermediateTensors
 
-from vllm.model_executor.models.deepseek_v2 import (
-    DeepseekV2ForCausalLM, DeepseekV2DecoderLayer,
-    DeepseekV2MLAAttention, DeepseekV2Attention, DeepseekV2MoE,
-    DeepseekV2MLP)
+from vllm.model_executor.models.deepseek_v2 import (  # noqa
+    DeepseekV2ForCausalLM, DeepseekV2DecoderLayer, DeepseekV2MLAAttention,
+    DeepseekV2Attention, DeepseekV2MoE, DeepseekV2MLP)
 
 
 class CustomDeepseekV2MoE(DeepseekV2MoE):
@@ -262,9 +261,11 @@ class CustomDeepseekV2Model(nn.Module):
 
 
 class CustomDeepseekV2ForCausalLM(DeepseekV2ForCausalLM):
+    # add `packed_modules_mapping` in `DeepseekV2ForCausalLM` to support weight merging
     packed_modules_mapping = {
         "gate_up_proj": ["gate_proj", "up_proj"],
-        "experts": ["experts.0.gate_proj", "experts.0.up_proj", "experts.0.down_proj"]
+        "experts":
+        ["experts.0.gate_proj", "experts.0.up_proj", "experts.0.down_proj"]
     }
 
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = ""):
@@ -274,7 +275,8 @@ class CustomDeepseekV2ForCausalLM(DeepseekV2ForCausalLM):
         self.config = config
         self.quant_config = quant_config
         self.model = CustomDeepseekV2Model(vllm_config=vllm_config,
-                                     prefix=maybe_prefix(prefix, "model"))
+                                           prefix=maybe_prefix(
+                                               prefix, "model"))
         self.lm_head = ParallelLMHead(config.vocab_size,
                                       config.hidden_size,
                                       quant_config=quant_config)
@@ -309,6 +311,7 @@ class CustomDeepseekV2ForCausalLM(DeepseekV2ForCausalLM):
             if spec_layer is not None:
                 continue  # skip spec decode layers for main model
 
+            # w8a8 weight from modelslim need flatten before load_weight
             if "scale" in name or "offset" in name:
                 loaded_weight = loaded_weight.flatten()
 
@@ -381,9 +384,8 @@ class CustomDeepseekV3ForCausalLM(CustomDeepseekV2ForCausalLM):
 
 def get_spec_layer_idx_from_weight_name(config: PretrainedConfig,
                                         weight_name: str) -> Optional[int]:
-    if hasattr(config,
-               "num_nextn_predict_layers") and (config.num_nextn_predict_layers
-                                                > 0):
+    if hasattr(config, "num_nextn_predict_layers") and (
+            config.num_nextn_predict_layers > 0):
         layer_idx = config.num_hidden_layers
         for i in range(config.num_nextn_predict_layers):
             if weight_name.startswith(f"model.layers.{layer_idx+i}."):

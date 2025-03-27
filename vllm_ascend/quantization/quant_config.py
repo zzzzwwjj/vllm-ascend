@@ -53,8 +53,13 @@ class AscendQuantConfig(QuantizationConfig):
 
     def __init__(self, quant_config: Dict[str, Any]):
         self.quant_description = quant_config
-        self.packed_modules_mapping = {"gate_up_proj": ["gate_proj", "up_proj"],
-                                       "experts": ["experts.0.gate_proj", "experts.0.up_proj", "experts.0.down_proj"]}
+        self.packed_modules_mapping = {
+            "gate_up_proj": ["gate_proj", "up_proj"],
+            "experts": [
+                "experts.0.gate_proj", "experts.0.up_proj",
+                "experts.0.down_proj"
+            ]
+        }
 
     def __repr__(self) -> str:
         return "AscendQuantConfig:\n" + super().__repr__()
@@ -91,7 +96,8 @@ class AscendQuantConfig(QuantizationConfig):
                          prefix: str) -> Optional["QuantizeMethodBase"]:
         from vllm.attention.layer import Attention
         if isinstance(layer, LinearBase):
-            if self.is_layer_skipped_ascend(prefix, self.packed_modules_mapping):
+            if self.is_layer_skipped_ascend(prefix,
+                                            self.packed_modules_mapping):
                 return UnquantizedLinearMethod()
             return AscendLinearMethod(self, prefix,
                                       self.packed_modules_mapping)
@@ -99,7 +105,8 @@ class AscendQuantConfig(QuantizationConfig):
             'fa_quant_type' in self.quant_description.keys():
             return AscendKVCacheMethod(self, prefix)
         elif isinstance(layer, FusedMoE):
-            if self.is_layer_skipped_ascend(prefix, self.packed_modules_mapping):
+            if self.is_layer_skipped_ascend(prefix,
+                                            self.packed_modules_mapping):
                 return UnquantizedFusedMoEMethod()
             return AscendFusedMoEMethod(self, prefix,
                                         self.packed_modules_mapping)
@@ -266,12 +273,13 @@ class AscendKVCacheMethod(BaseKVCacheMethod):
 
 
 def fused_moe_perchannel_weight_loader(param: torch.nn.Parameter,
-                  loaded_weight: torch.Tensor, weight_name: str,
-                  shard_id: str, expert_id: int) -> None:
+                                       loaded_weight: torch.Tensor,
+                                       weight_name: str, shard_id: str,
+                                       expert_id: int) -> None:
 
     if shard_id not in ("w1", "w2", "w3"):
         raise ValueError(f"shard_id must be ['w1','w2','w3'] but "
-                            f"got {shard_id}.")
+                         f"got {shard_id}.")
 
     # Fetch the dim to shard the parameter/loaded weight
     # based on the shard id. This will be whatever
@@ -316,7 +324,8 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
         quant_config: The Ascend quantization config.
     """
 
-    def __init__(self, quant_config: AscendQuantConfig, prefix: str, packed_modules_mapping: Dict[str, Any]):
+    def __init__(self, quant_config: AscendQuantConfig, prefix: str,
+                 packed_modules_mapping: Dict[str, Any]):
         self.quantizer = AscendQuantizer.get_quantizer(
             quant_config.quant_description, prefix, packed_modules_mapping)
         self.quant_method = self.quantizer.build_moe_method()
@@ -330,21 +339,29 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
         params_dtype: torch.dtype,
         **extra_weight_attrs,
     ) -> None:
-        weight_param = self.quant_method.get_weight(num_experts, intermediate_size_per_partition, hidden_size, params_dtype)
+        weight_param = self.quant_method.get_weight(
+            num_experts, intermediate_size_per_partition, hidden_size,
+            params_dtype)
         for param_key, param_value in weight_param.items():
             param = torch.nn.Parameter(param_value, requires_grad=False)
             layer.register_parameter(param_key, param)
             set_weight_attrs(param, extra_weight_attrs)
 
-        extra_weight_attrs.update({"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value})
-        extra_weight_attrs.update({"weight_loader": fused_moe_perchannel_weight_loader})
-        dynamic_quant_param = self.quant_method.get_dynamic_quant_param(num_experts, intermediate_size_per_partition, hidden_size, params_dtype)
+        extra_weight_attrs.update(
+            {"quant_method": FusedMoeWeightScaleSupported.CHANNEL.value})
+        # load `offset` weight in `fused_moe_perchannel_weight_loader`, the original weight load in vllm 0.7.3 could only load `scale` and `zero`
+        extra_weight_attrs.update(
+            {"weight_loader": fused_moe_perchannel_weight_loader})
+        dynamic_quant_param = self.quant_method.get_dynamic_quant_param(
+            num_experts, intermediate_size_per_partition, hidden_size,
+            params_dtype)
         for param_key, param_value in dynamic_quant_param.items():
             param = torch.nn.Parameter(param_value, requires_grad=False)
             layer.register_parameter(param_key, param)
             set_weight_attrs(param, extra_weight_attrs)
 
-    def apply(self,
+    def apply(
+        self,
         layer: torch.nn.Module,
         x: torch.Tensor,
         use_grouped_topk: bool,
@@ -357,6 +374,8 @@ class AscendFusedMoEMethod(FusedMoEMethodBase):
         scoring_func: str = "softmax",
         e_score_correction_bias: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        return self.quant_method.apply(layer, x, use_grouped_topk, top_k, router_logits,
-                                       renormalize, topk_group, num_expert_group, custom_routing_function,
-                                       scoring_func, e_score_correction_bias)
+        return self.quant_method.apply(layer, x, use_grouped_topk, top_k,
+                                       router_logits, renormalize, topk_group,
+                                       num_expert_group,
+                                       custom_routing_function, scoring_func,
+                                       e_score_correction_bias)
